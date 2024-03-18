@@ -17,7 +17,6 @@ from luxai2021.game.position import Position
 def closest_node(node, nodes):
     dist_2 = np.sum((nodes - node) ** 2, axis=1)
     return np.argmin(dist_2)
-
 def furthest_node(node, nodes):
     dist_2 = np.sum((nodes - node) ** 2, axis=1)
     return np.argmax(dist_2)
@@ -384,6 +383,8 @@ class AgentPolicy(AgentWithModel):
 
                     observation_index += 7
 
+
+
         if unit is not None:
             # Encode the cargo space
             #   1x cargo size
@@ -421,6 +422,8 @@ class AgentPolicy(AgentWithModel):
         obs[observation_index+1] = float(game.state["teamStates"][team]["researched"]["coal"])
         obs[observation_index+2] = float(game.state["teamStates"][team]["researched"]["uranium"])
 
+        # f = open("output.txt", "a")
+        # print("OBS: ", obs, file=f)
         return obs
 
     def action_code_to_action(self, action_code, game, unit=None, city_tile=None, team=None):
@@ -440,8 +443,9 @@ class AgentPolicy(AgentWithModel):
                 x = unit.pos.x
                 y = unit.pos.y
             
+            ## If city_tile: choose spawn/research action
             if city_tile != None:
-                action =  self.actions_cities[action_code%len(self.actions_cities)](
+                action = self.actions_cities[action_code % len(self.actions_cities)](
                     game=game,
                     unit_id=unit.id if unit else None,
                     unit=unit,
@@ -451,8 +455,9 @@ class AgentPolicy(AgentWithModel):
                     x=x,
                     y=y
                 )
+            ## If NOT city_tile: choose movement actions (center, north, etc)
             else:
-                action =  self.actions_units[action_code%len(self.actions_units)](
+                action = self.actions_units[action_code % len(self.actions_units)](
                     game=game,
                     unit_id=unit.id if unit else None,
                     unit=unit,
@@ -463,6 +468,10 @@ class AgentPolicy(AgentWithModel):
                     y=y
                 )
             
+            # if hasattr(action, 'direction'):
+            #     print("actionTaken: MoveAction - ", action.direction)
+            # else:
+            #     print("actionTaken: ", action)
             return action
         except Exception as e:
             # Not a valid action
@@ -527,18 +536,37 @@ class AgentPolicy(AgentWithModel):
         rewards = {}
         
         # Give a reward for unit creation/death. 0.05 reward per unit.
-        rewards["rew/r_units"] = (unit_count - self.units_last) * 0.05
+        rewards["rew/r_units"] = (unit_count - self.units_last) * 0.1
         self.units_last = unit_count
 
         # Give a reward for city creation/death. 0.1 reward per city.
-        rewards["rew/r_city_tiles"] = (city_tile_count - self.city_tiles_last) * 0.1
+        rewards["rew/r_city_tiles"] = (city_tile_count - self.city_tiles_last) * 0.3
         self.city_tiles_last = city_tile_count
 
-        # Reward collecting fuel
+        # Reward collecting fuel        and divided by 20000
         fuel_collected = game.stats["teamStats"][self.team]["fuelGenerated"]
-        rewards["rew/r_fuel_collected"] = ( (fuel_collected - self.fuel_collected_last) / 20000 )
+        rewards["rew/r_fuel_collected"] = ( (fuel_collected - self.fuel_collected_last) / 15000 )
         self.fuel_collected_last = fuel_collected
         
+        ############################# ADD MORE REWARDS ########################
+        f = open("output.txt", "a")
+
+        ## for each wood that is still alive, give it 1.0 reward (promote agent to mine other wood)
+        num_of_wood_sources = len(game.map.resources_by_type[Constants.RESOURCE_TYPES.WOOD])
+        print("There are ", num_of_wood_sources, file=f)
+        rewards["rew/r_wood_alive"] = num_of_wood_sources * 0.03
+
+        teamState = game.state["teamStates"][self.team]
+        if (teamState["researched"]["coal"] == False
+            or teamState["researched"]["uranium"] == False):
+                rewards["rew/research_point"] = teamState["researchPoints"]
+
+        rewards["rew/r_coal_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["coal"] * 0.01
+        rewards["rew/r_uranium_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["uranium"] * 0.02
+
+        ######################################################################
+
+
         # Give a reward of 1.0 per city tile alive at the end of the game
         rewards["rew/r_city_tiles_end"] = 0
         if is_game_finished:
@@ -559,9 +587,6 @@ class AgentPolicy(AgentWithModel):
 
         return reward
 
-    ##
-    ## more of these reduces action space
-    ##
     def turn_heurstics(self, game, is_first_turn):
         """
         This is called pre-observation actions to allow for hardcoded heuristics
