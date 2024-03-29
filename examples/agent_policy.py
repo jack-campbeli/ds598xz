@@ -170,7 +170,7 @@ class AgentPolicy(AgentWithModel):
         #   1x research points [cur player]
         #   1x researched coal [cur player]
         #   1x researched uranium [cur player]
-        self.observation_shape = (3 + 7 * 5 * 2 + 1 + 1 + 1 + 2 + 2 + 2 + 3,)
+        self.observation_shape = (3 + 7 * 5 * 2 + 1 + 1 + 1 + 2 + 2 + 2 + 3     + 9,)
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
@@ -424,16 +424,16 @@ class AgentPolicy(AgentWithModel):
         observation_index += 3
 
         ################### New OBS ###################
-        obs[observation_index] = game.state["teamStats"][team]["fuelGenerated"]
-        obs[observation_index+1] = game.state["teamStats"][team]["fuelGenerated"]["resourcesCollected"]["wood"]
-        obs[observation_index+2] = game.state["teamStats"][team]["fuelGenerated"]["resourcesCollected"]["coal"]
-        obs[observation_index+3] = game.state["teamStats"][team]["fuelGenerated"]["resourcesCollected"]["uranium"]
-        obs[observation_index+4] = game.state["teamStats"][team]["cityTilesBuilt"]
-        obs[observation_index+5] = game.state["teamStats"][team]["workersBuilt"]
-        obs[observation_index+6] = game.state["teamStats"][team]["cartsBuilt"]
-        obs[observation_index+7] = game.state["teamStats"][team]["roadsBuilt"]
-        obs[observation_index+8] = game.state["teamStats"][team]["roadsPillaged"]
-        observation_index += 9
+        obs[observation_index] = game.stats["teamStats"][team]["fuelGenerated"]
+        obs[observation_index+1] = game.stats["teamStats"][team]["resourcesCollected"]["wood"]
+        obs[observation_index+2] = game.stats["teamStats"][team]["resourcesCollected"]["coal"]
+        obs[observation_index+3] = game.stats["teamStats"][team]["resourcesCollected"]["uranium"]
+        obs[observation_index+4] = game.stats["teamStats"][team]["cityTilesBuilt"]
+        obs[observation_index+5] = game.stats["teamStats"][team]["workersBuilt"]
+        obs[observation_index+6] = game.stats["teamStats"][team]["cartsBuilt"]
+        obs[observation_index+7] = game.stats["teamStats"][team]["roadsBuilt"]
+        obs[observation_index+8] = game.stats["teamStats"][team]["roadsPillaged"]
+        # observation_index += 9
 
 
         # f = open("output.txt", "a")
