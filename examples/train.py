@@ -108,11 +108,11 @@ def train(args):
     
     callbacks = []
 
-    # Save a checkpoint and 5 match replay files every 100K steps
+    # Save a checkpoint and 5 match replay files every 300K steps
     player_replay = AgentPolicy(mode="inference", model=model)
     callbacks.append(
         SaveReplayAndModelCallback(
-                                save_freq=100000,
+                                save_freq=500000,
                                 save_path='./models/',
                                 name_prefix=f'model{run_id}',
                                 replay_env=LuxEnvironment(

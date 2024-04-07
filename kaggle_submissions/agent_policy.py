@@ -170,7 +170,7 @@ class AgentPolicy(AgentWithModel):
         #   1x research points [cur player]
         #   1x researched coal [cur player]
         #   1x researched uranium [cur player]
-        self.observation_shape = (3 + 7 * 5 * 2 + 1 + 1 + 1 + 2 + 2 + 2 + 3 + 3,)
+        self.observation_shape = (3 + 7 * 5 * 2 + 1 + 1 + 1 + 2 + 2 + 2 + 3,)
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
@@ -324,8 +324,8 @@ class AgentPolicy(AgentWithModel):
                     #   5x direction
                     #   1x distance
                     if key in self.object_nodes:
-                        if (    # if city   OR   unit (of obs) == key (of array)
-                                (key == "city" and city_tile is not None) or        
+                        if (
+                                (key == "city" and city_tile is not None) or
                                 (unit is not None and str(unit.type) == key and len(game.map.get_cell_by_pos(unit.pos).units) <= 1 )
                         ):
                             # Filter out the current unit from the closest-search
@@ -421,21 +421,6 @@ class AgentPolicy(AgentWithModel):
         obs[observation_index] = game.state["teamStates"][team]["researchPoints"] / 200.0
         obs[observation_index+1] = float(game.state["teamStates"][team]["researched"]["coal"])
         obs[observation_index+2] = float(game.state["teamStates"][team]["researched"]["uranium"])
-        observation_index += 3
-
-        ################### New OBS ###################
-        if unit is not None:
-            if unit.type == Constants.UNIT_TYPES.WORKER:
-                obs[observation_index] = unit.cooldown
-
-                if (unit.get_cargo_space_left() > 1):
-                    obs[observation_index + 1] = 1
-                else:
-                    obs[observation_index + 2] = 1
-        observation_index += 3
-
-        
-
 
         # f = open("output.txt", "a")
         # print("OBS: ", obs, file=f)
@@ -478,7 +463,6 @@ class AgentPolicy(AgentWithModel):
                     unit=unit,
                     city_id=city_tile.city_id if city_tile else None,
                     citytile=city_tile,
-                    
                     team=team,
                     x=x,
                     y=y
@@ -516,157 +500,13 @@ class AgentPolicy(AgentWithModel):
         self.city_tiles_last = 0
         self.fuel_collected_last = 0
 
-        # new variables
-        self.num_of_wood_sources_last = 0
-        self.city_count_near_resources = 0
-
-    def get_end_game_modifier(turn, threshold=280, start_modifier=1.0, end_modifier=1.5, max_turns=360):
-        if turn <= threshold:
-            return start_modifier
-        elif turn >= max_turns:
-            return end_modifier
-        else:
-            # Linear interpolation between start_modifier and end_modifier
-            return start_modifier + (end_modifier - start_modifier) * ((turn - threshold) / (max_turns - threshold))
-
-
-    # def get_reward(self, game, is_game_finished, is_new_turn, is_game_error):
-    #     """
-    #     Returns the reward function for this step of the game. Reward should be a
-    #     delta increment to the reward, not the total current reward.
-    #     """
-    #     ############# new variables ##################
-    #     teamState = game.state["teamStates"][self.team]
-
-    #     end_game_neg_modifier = 1
-    #     end_game_pos_modifier = 1
-    #     if (game.state["turn"] > 280):
-    #         end_game_neg_modifier = -1.5
-    #         end_game_pos_modifier = 1.5
-    #     ##############################################
-
-
-    #     if is_game_error:
-    #         # Game environment step failed, assign a game lost reward to not incentivise this
-    #         print("Game failed due to error")
-    #         return -1.0
-
-    #     if not is_new_turn and not is_game_finished:
-    #         # Only apply rewards at the start of each turn or at game end
-    #         return 0
-
-    #     # Get some basic stats
-    #     unit_count = len(game.state["teamStates"][self.team]["units"])
-
-    #     city_count = 0
-    #     city_count_opponent = 0
-    #     city_tile_count = 0
-    #     city_tile_count_opponent = 0
-    #     for city in game.cities.values():
-    #         if city.team == self.team:
-    #             city_count += 1
-    #         else:
-    #             city_count_opponent += 1
-
-    #         for cell in city.city_cells:
-    #             if city.team == self.team:
-    #                 city_tile_count += 1
-    #             else:
-    #                 city_tile_count_opponent += 1
-        
-    #     rewards = {}
-        
-    #     # Give a reward for unit creation/death. 0.05 reward per unit.
-    #     rewards["rew/r_units"] = (unit_count - self.units_last) * 0.1
-    #     self.units_last = unit_count
-
-    #     # Give a reward for city creation/death. 0.1 reward per city.
-    #     rewards["rew/r_city_tiles"] = (city_tile_count - self.city_tiles_last) * 0.1 * end_game_pos_modifier
-    #     self.city_tiles_last = city_tile_count
-
-    #     # Reward collecting fuel and divided by 20000
-    #     fuel_collected = game.stats["teamStats"][self.team]["fuelGenerated"]
-    #     rewards["rew/r_fuel_collected"] = ( (fuel_collected - self.fuel_collected_last) / 20000 )
-    #     self.fuel_collected_last = fuel_collected 
-        
-    #     ############################# ADD MORE REWARDS ########################
-    #     f = open("output.txt", "a")
-
-    #     ## for each wood that is still alive, give it 1.0 reward (promote agent to mine other wood)
-    #     if Constants.RESOURCE_TYPES.WOOD in game.map.resources_by_type:
-    #         num_of_wood_sources = len(game.map.resources_by_type[Constants.RESOURCE_TYPES.WOOD])
-    #         rewards["rew/d_wood_alive"] = (num_of_wood_sources - self.num_of_wood_sources_last) * 0.4 * end_game_neg_modifier
-    #         self.num_of_wood_sources_last = num_of_wood_sources
-
-    #     # slightly more focus on collecting more coal or uranium
-    #     rewards["rew/r_coal_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["coal"] * 0.02
-    #     rewards["rew/r_uranium_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["uranium"] * 0.03
-
-    #     ### Research Reward System ###
-    #     # rewards["rew/research_point"] = 0
-    #     # limit = 250
-    #     # if (teamState["researched"]["coal"] == True):
-    #     #     limit -= 50
-    #     # if (teamState["researched"]["uranium"] == True):
-    #     #     limit -= 200
-    #     # if (teamState["researchPoints"] <= limit):
-    #     #     rewards["rew/research_point"] += teamState["researchPoints"] / 10
-    #     # else:
-    #     #     rewards["rew/research_point"] -= (teamState["researchPoints"] - limit) / 10
-    #     # rewards["rew/research_point"] *= 0.1
-
-    #     # Count of CityTiles near a resource
-    #     count = 0
-    #     for key in game.map.resources_by_type:
-    #         for cell in game.map.resources_by_type[key]:
-    #             for adjCell in game.map.get_adjacent_cells_with_corners(cell):
-    #                 if adjCell.is_city_tile():
-    #                     count += 1
-    #     rewards["rew/close_to_resources"] = (count - self.city_count_near_resources) * 0.2
-    #     self.city_count_near_resources = count
-                
-
-    #     ######################################################################
-
-
-    #     # Give a reward of 1.0 per city tile alive at the end of the game
-    #     rewards["rew/r_city_tiles_end"] = 0
-    #     if is_game_finished:
-    #         self.is_last_turn = True
-    #         rewards["rew/r_city_tiles_end"] = city_tile_count
-
-    #         '''
-    #         # Example of a game win/loss reward instead
-    #         if game.get_winning_team() == self.team:
-    #             rewards["rew/r_game_win"] = 100.0 # Win
-    #         else:
-    #             rewards["rew/r_game_win"] = -100.0 # Loss
-    #         '''
-
-    #         totalResearchReward = 0
-    #         if (teamState["researched"]["coal"] == True):
-    #             totalResearchReward += 3
-    #         else:
-    #             totalResearchReward -= 1
-    #         if (teamState["researched"]["uranium"] == True):
-    #             totalResearchReward += 10
-    #         else:
-    #             totalResearchReward -= 1
-    #         rewards["rew/research_reward"] = totalResearchReward
-            
-        
-    #     reward = 0
-    #     for name, value in rewards.items():
-    #         reward += value
-
-    #     return reward
-
     def get_reward(self, game, is_game_finished, is_new_turn, is_game_error):
         """
-        Returns the reward function for this step of the game, focusing on maximizing city building towards the end.
+        Returns the reward function for this step of the game. Reward should be a
+        delta increment to the reward, not the total current reward.
         """
         if is_game_error:
-            # Penalize game errors
+            # Game environment step failed, assign a game lost reward to not incentivise this
             print("Game failed due to error")
             return -1.0
 
@@ -674,66 +514,78 @@ class AgentPolicy(AgentWithModel):
             # Only apply rewards at the start of each turn or at game end
             return 0
 
-        current_turn = game.state["turn"]
-        total_turns = GAME_CONSTANTS["PARAMETERS"]["MAX_DAYS"]
-        threshold_turn = 280  # Start focusing on city building past this turn
-
-        # Calculate dynamic modifiers
-        late_game_phase = current_turn > threshold_turn
-        late_game_multiplier = 2.0 if late_game_phase else 1.0  # Encourage city building in the late game
-        resource_penalty_modifier = (current_turn - threshold_turn) / (total_turns - threshold_turn) if late_game_phase else 0
-
-        # Initialize rewards dictionary
-        rewards = {}
-
-        # Basic stats
+        # Get some basic stats
         unit_count = len(game.state["teamStates"][self.team]["units"])
-        city_tile_count = sum(len(city.city_cells) for city in game.cities.values() if city.team == self.team)
 
-        # Unit creation/death reward
-        rewards["rew/r_units"] = (unit_count - self.units_last) * 0.05 * (0.5 if late_game_phase else 1.0)
+        city_count = 0
+        city_count_opponent = 0
+        city_tile_count = 0
+        city_tile_count_opponent = 0
+        for city in game.cities.values():
+            if city.team == self.team:
+                city_count += 1
+            else:
+                city_count_opponent += 1
+
+            for cell in city.city_cells:
+                if city.team == self.team:
+                    city_tile_count += 1
+                else:
+                    city_tile_count_opponent += 1
+        
+        rewards = {}
+        
+        # Give a reward for unit creation/death. 0.05 reward per unit.
+        rewards["rew/r_units"] = (unit_count - self.units_last) * 0.1
         self.units_last = unit_count
 
-        # City creation reward, dynamically scaled
-        rewards["rew/r_city_tiles"] = (city_tile_count - self.city_tiles_last) * 0.1 * late_game_multiplier
+        # Give a reward for city creation/death. 0.1 reward per city.
+        rewards["rew/r_city_tiles"] = (city_tile_count - self.city_tiles_last) * 0.3
         self.city_tiles_last = city_tile_count
 
-        # Fuel collected reward, adjusted for late game
+        # Reward collecting fuel        and divided by 20000
         fuel_collected = game.stats["teamStats"][self.team]["fuelGenerated"]
-        rewards["rew/r_fuel_collected"] = (fuel_collected - self.fuel_collected_last) / 20000
+        rewards["rew/r_fuel_collected"] = ( (fuel_collected - self.fuel_collected_last) / 15000 )
         self.fuel_collected_last = fuel_collected
+        
+        ############################# ADD MORE REWARDS ########################
+        f = open("output.txt", "a")
 
-        # Adjust rewards for resource collection, especially in the late game
-        for resource_type, modifier in [("coal", 0.02), ("uranium", 0.03)]:
-            amount_collected = game.stats["teamStats"][self.team]["resourcesCollected"][resource_type]
-            rewards[f"rew/r_{resource_type}_mined"] = amount_collected * modifier * max(0, 1 - resource_penalty_modifier)
+        ## for each wood that is still alive, give it 1.0 reward (promote agent to mine other wood)
+        num_of_wood_sources = len(game.map.resources_by_type[Constants.RESOURCE_TYPES.WOOD])
+        print("There are ", num_of_wood_sources, file=f)
+        rewards["rew/r_wood_alive"] = num_of_wood_sources * 0.03
 
-        # Reward for city tiles near resources, to promote strategic city placement
-        rewards["rew/close_to_resources"] = self.calculate_cities_near_resources(game) * 0.2
+        teamState = game.state["teamStates"][self.team]
+        if (teamState["researched"]["coal"] == False
+            or teamState["researched"]["uranium"] == False):
+                rewards["rew/research_point"] = teamState["researchPoints"]
 
-        # End-of-game rewards
+        rewards["rew/r_coal_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["coal"] * 0.01
+        rewards["rew/r_uranium_mined"] = game.stats["teamStats"][self.team]["resourcesCollected"]["uranium"] * 0.02
+
+        ######################################################################
+
+
+        # Give a reward of 1.0 per city tile alive at the end of the game
+        rewards["rew/r_city_tiles_end"] = 0
         if is_game_finished:
-            # Reward based on city tiles at the end
-            rewards["rew/r_city_tiles_end"] = city_tile_count * late_game_multiplier
+            self.is_last_turn = True
+            rewards["rew/r_city_tiles_end"] = city_tile_count
 
-            # Additional rewards or penalties based on research and game outcome could be added here
+            '''
+            # Example of a game win/loss reward instead
+            if game.get_winning_team() == self.team:
+                rewards["rew/r_game_win"] = 100.0 # Win
+            else:
+                rewards["rew/r_game_win"] = -100.0 # Loss
+            '''
+        
+        reward = 0
+        for name, value in rewards.items():
+            reward += value
 
-        # Aggregate reward
-        reward = sum(rewards.values())
         return reward
-
-    def calculate_cities_near_resources(self, game):
-        """
-        Calculate the number of city tiles that are near resources for additional strategic placement rewards.
-        """
-        count = 0
-        for resource_cells in game.map.resources_by_type.values():
-            for resource_cell in resource_cells:
-                for adj_cell in game.map.get_adjacent_cells_with_corners(resource_cell):
-                    if adj_cell.is_city_tile() and adj_cell.city_tile.team == self.team:
-                        count += 1
-        return count
-
 
     def turn_heurstics(self, game, is_first_turn):
         """
@@ -746,3 +598,6 @@ class AgentPolicy(AgentWithModel):
             is_first_turn (bool): True if it's the first turn of a game.
         """
         return
+
+    
+

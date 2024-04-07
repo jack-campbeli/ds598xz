@@ -138,3 +138,8 @@ dmypy.json
 .pyre/
 
 .idea/
+
+sub
+
+submission.tar.gz
+output.txt
