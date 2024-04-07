@@ -665,6 +665,17 @@ class AgentPolicy(AgentWithModel):
         """
         Returns the reward function for this step of the game, focusing on maximizing city building towards the end.
         """
+        ############# new variables ##################
+        teamState = game.state["teamStates"][self.team]
+
+        end_game_neg_modifier = 1
+        end_game_pos_modifier = 1
+        if (game.state["turn"] > 280):
+            end_game_neg_modifier = -1.5
+            end_game_pos_modifier = 1.5
+        ##############################################
+
+
         if is_game_error:
             # Penalize game errors
             print("Game failed due to error")
