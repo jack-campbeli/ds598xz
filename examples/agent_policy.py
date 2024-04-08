@@ -174,6 +174,7 @@ class AgentPolicy(AgentWithModel):
         self.observation_space = spaces.Box(low=0, high=1, shape=self.observation_shape, dtype=np.float16)
 
         self.object_nodes = {}
+        self.previous_city_tile_count = 0
 
     def get_agent_type(self):
         """
@@ -665,16 +666,6 @@ class AgentPolicy(AgentWithModel):
         """
         Returns the reward function for this step of the game, focusing on maximizing city building towards the end.
         """
-        ############# new variables ##################
-        teamState = game.state["teamStates"][self.team]
-
-        end_game_neg_modifier = 1
-        end_game_pos_modifier = 1
-        if (game.state["turn"] > 280):
-            end_game_neg_modifier = -1.5
-            end_game_pos_modifier = 1.5
-        ##############################################
-
 
         if is_game_error:
             # Penalize game errors
@@ -717,15 +708,23 @@ class AgentPolicy(AgentWithModel):
         # Adjust rewards for resource collection, especially in the late game
         for resource_type, modifier in [("coal", 0.02), ("uranium", 0.03)]:
             amount_collected = game.stats["teamStats"][self.team]["resourcesCollected"][resource_type]
-            rewards[f"rew/r_{resource_type}_mined"] = amount_collected * modifier * max(0, 1 - resource_penalty_modifier)
+            rewards[f"rew/r_{resource_type}_mined"] = amount_collected * modifier #* max(0, 1 - resource_penalty_modifier)
 
         # Reward for city tiles near resources, to promote strategic city placement
-        rewards["rew/close_to_resources"] = self.calculate_cities_near_resources(game) * 0.2
+        ## ** NEW REWARD FUNCTION ** ##
+        rewards["rew/close_to_resources"] = self.calculate_cities_near_resources(game) * 0.15
+
+        ## ** NEW REWARD FUNCTION ** ##
+        rewards["rew/fuel_efficiency"] = self.reward_for_fuel_efficiency(game)
+
+        # Reward for surviving the night
+        rewards["rew/city_survival"] = self.reward_for_city_survival(game)
 
         # End-of-game rewards
         if is_game_finished:
             # Reward based on city tiles at the end
-            rewards["rew/r_city_tiles_end"] = city_tile_count * late_game_multiplier
+            # rewards["rew/r_city_tiles_end"] = city_tile_count * late_game_multiplier # new
+            rewards["rew/r_city_tiles_end"] = city_tile_count * 5 # new
 
             # Additional rewards or penalties based on research and game outcome could be added here
 
@@ -733,6 +732,7 @@ class AgentPolicy(AgentWithModel):
         reward = sum(rewards.values())
         return reward
 
+    ## ********* NEW REWARD FUNCTION (WORKS) ********* ##               ((PPO_2 + PPO_4 + PPO_5))
     def calculate_cities_near_resources(self, game):
         """
         Calculate the number of city tiles that are near resources for additional strategic placement rewards.
@@ -744,7 +744,98 @@ class AgentPolicy(AgentWithModel):
                     if adj_cell.is_city_tile() and adj_cell.city_tile.team == self.team:
                         count += 1
         return count
+    ## ********* NEW REWARD FUNCTION ********* ##
 
+    ## ********* NEW REWARD FUNCTION (TESTING) ********* ##                  ((PPO_3))
+    # def calculate_clustered_cities_near_resources(self, game):
+    #     """
+    #     Calculate the number of city tiles that are near resources, with an additional reward for being 
+    #     adjacent to other city tiles. This encourages building clusters of cities near resources.
+        
+    #     Returns:
+    #     - count: A weighted count that is higher when city tiles are clustered together near resources.
+    #     """
+    #     count = 0
+    #     clustered_bonus = 0.5  # Additional weight for each adjacent friendly city tile
+    #     for resource_type, resource_cells in game.map.resources_by_type.items():
+    #         for resource_cell in resource_cells:
+    #             # Check all cells adjacent to resources including diagonals
+    #             for adj_cell in game.map.get_adjacent_cells_with_corners(resource_cell):
+    #                 if adj_cell.is_city_tile() and adj_cell.city_tile.team == self.team:
+    #                     # Direct count for a city tile next to a resource
+    #                     count += 1
+    #                     # Check the number of adjacent friendly city tiles to this city tile
+    #                     adjacent_city_tiles = game.map.get_adjacent_cells(adj_cell)
+    #                     for adjacent_city_tile in adjacent_city_tiles:
+    #                         if (adjacent_city_tile.is_city_tile() and
+    #                                 adjacent_city_tile.city_tile.team == self.team):
+    #                             # Increment the count with a bonus for clustering
+    #                             count += clustered_bonus
+    #     return count
+    ## ********* NEW REWARD FUNCTION (TESTING) ********* ##
+    
+    ## ********* NEW REWARD FUNCTION (TESTING) ********* ##                 ((PPO_5))
+    def reward_for_fuel_efficiency(self, game):
+        night_turns = 10  # last 10 turns in a cycle are night turns
+        fuel_efficiency_reward = 0.0
+        reward_for_worker_inside = 0.05  # reward for each worker inside a city at night
+        reward_for_city_prepared_for_night = 1  # reward for each city tile with enough fuel to survive the night
+        
+        # Check if it's night time
+        if game.is_night():
+            # Reward keeping workers inside cities at night
+            for worker in game.state["teamStates"][self.team]["units"].values():
+                if worker.type == "worker" and worker.is_in_city():
+                    fuel_efficiency_reward += reward_for_worker_inside
+            
+            # # Reward city tiles for having enough fuel to survive the night       ((PPO_4))
+            # for city in game.cities.values():
+            #     if city.team == self.team:
+            #         for city_tile in city.city_cells:
+            #             # Calculate the expected fuel consumption for the night
+            #             expected_fuel_consumption = 0
+            #             for _ in range(night_turns):
+            #                 # Get the number of adjacent friendly city tiles to reduce fuel burn
+            #                 num_adjacent = sum(1 for adj_cell in game.map.get_adjacent_cells(city_tile) 
+            #                                 if adj_cell.city_tile and adj_cell.city_tile.team == self.team)
+            #                 expected_fuel_consumption += max(0, 23 - 5 * num_adjacent)
+                        
+            #             # Check if the city has enough fuel to survive the night
+            #             if city.fuel > expected_fuel_consumption:
+            #                 fuel_efficiency_reward += reward_for_city_prepared_for_night
+
+        return fuel_efficiency_reward
+    ## ********* NEW REWARD FUNCTION (TESTING)********* ##
+
+    ## ********* NEW REWARD FUNCTION (TESTING) ********* ##        ((PPO_5))                                
+    def set_previous_city_tile_count(self, amount=0):
+        """
+        Set the previous city tile count for each city for use in reward calculations.
+        """
+        self.previous_city_tile_count = amount
+
+    def get_previous_city_tile_count(self):
+        """
+        Get the previous city tile count for a city.
+        """
+        return self.previous_city_tile_count
+
+
+    def reward_for_city_survival(self, game):
+        penalty_for_city_tile_loss = -2.0  # Severe penalty for losing city tiles
+
+        # Calculate the current number of city tiles
+        current_city_tile_count = sum(len(city.city_cells) for city in game.cities.values() if city.team == self.team)
+        
+        # Calculate the penalty for lost city tiles since last turn
+        city_tiles_lost = max(0, self.previous_city_tile_count - current_city_tile_count)
+        city_survival_reward = city_tiles_lost * penalty_for_city_tile_loss
+        
+        # Update the previous count for the next turn's calculation
+        self.previous_city_tile_count = current_city_tile_count
+
+        return city_survival_reward
+    ## ********* NEW REWARD FUNCTION (TESTING) ********* ##
 
     def turn_heurstics(self, game, is_first_turn):
         """
